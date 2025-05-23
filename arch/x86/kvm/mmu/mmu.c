@@ -5379,6 +5379,7 @@ static void update_permission_bitmask(struct kvm_mmu *mmu, bool ept)
 	bool cr4_smap = is_cr4_smap(mmu);
 	bool cr0_wp = is_cr0_wp(mmu);
 	bool efer_nx = is_efer_nx(mmu);
+	bool gmet = is_gmet(mmu);
 
 	for (byte = 0; byte < ARRAY_SIZE(mmu->permissions); ++byte) {
 		unsigned pfec = byte << 1;
@@ -5396,6 +5397,8 @@ static void update_permission_bitmask(struct kvm_mmu *mmu, bool ept)
 		u8 ff = (pfec & PFERR_FETCH_MASK) ? (u8)~x : 0;
 		/* Faults from kernel mode fetches of user pages */
 		u8 smepf = 0;
+		/* Faults from kernel mode fetches of user pages */
+		u8 gmetf = 0;
 		/* Faults from kernel mode accesses of user pages */
 		u8 smapf = 0;
 
@@ -5414,6 +5417,9 @@ static void update_permission_bitmask(struct kvm_mmu *mmu, bool ept)
 			/* Disallow supervisor fetches of user code if cr4.smep */
 			if (cr4_smep)
 				smepf = (pfec & PFERR_FETCH_MASK) ? kf : 0;
+
+			if (gmet)
+				gmetf = (pfec & PFERR_FETCH_MASK) ? kf : 0;
 
 			/*
 			 * SMAP:kernel-mode data accesses from user-mode
@@ -5435,7 +5441,7 @@ static void update_permission_bitmask(struct kvm_mmu *mmu, bool ept)
 				smapf = (pfec & (PFERR_RSVD_MASK|PFERR_FETCH_MASK)) ? 0 : kf;
 		}
 
-		mmu->permissions[byte] = ff | uf | wf | smepf | smapf;
+		mmu->permissions[byte] = ff | uf | wf | smepf | smapf | gmetf;
 	}
 }
 
@@ -5533,7 +5539,8 @@ static void paging32_init_context(struct kvm_mmu *context)
 }
 
 static union kvm_cpu_role kvm_calc_cpu_role(struct kvm_vcpu *vcpu,
-					    const struct kvm_mmu_role_regs *regs)
+					    const struct kvm_mmu_role_regs *regs,
+					    u64 nested_ctl)
 {
 	union kvm_cpu_role role = {0};
 
@@ -5569,6 +5576,8 @@ static union kvm_cpu_role kvm_calc_cpu_role(struct kvm_vcpu *vcpu,
 	role.ext.cr4_pke = ____is_efer_lma(regs) && ____is_cr4_pke(regs);
 	role.ext.cr4_la57 = ____is_efer_lma(regs) && ____is_cr4_la57(regs);
 	role.ext.efer_lma = ____is_efer_lma(regs);
+
+	role.ext.gmet = !!(nested_ctl & SVM_NESTED_CTL_GMET_ENABLE);
 	return role;
 }
 
@@ -5701,7 +5710,8 @@ static void kvm_init_shadow_mmu(struct kvm_vcpu *vcpu,
 }
 
 void kvm_init_shadow_npt_mmu(struct kvm_vcpu *vcpu, unsigned long cr0,
-			     unsigned long cr4, u64 efer, gpa_t nested_cr3)
+			     unsigned long cr4, u64 efer, gpa_t nested_cr3,
+			     u64 nested_ctl)
 {
 	struct kvm_mmu *context = &vcpu->arch.guest_mmu;
 	struct kvm_mmu_role_regs regs = {
@@ -5709,7 +5719,7 @@ void kvm_init_shadow_npt_mmu(struct kvm_vcpu *vcpu, unsigned long cr0,
 		.cr4 = cr4 & ~X86_CR4_PKE,
 		.efer = efer,
 	};
-	union kvm_cpu_role cpu_role = kvm_calc_cpu_role(vcpu, &regs);
+	union kvm_cpu_role cpu_role = kvm_calc_cpu_role(vcpu, &regs, nested_ctl);
 	union kvm_mmu_page_role root_role;
 
 	/* NPT requires CR0.PG=1. */
@@ -5834,7 +5844,7 @@ static void init_kvm_nested_mmu(struct kvm_vcpu *vcpu,
 void kvm_init_mmu(struct kvm_vcpu *vcpu)
 {
 	struct kvm_mmu_role_regs regs = vcpu_to_role_regs(vcpu);
-	union kvm_cpu_role cpu_role = kvm_calc_cpu_role(vcpu, &regs);
+	union kvm_cpu_role cpu_role = kvm_calc_cpu_role(vcpu, &regs, 0);
 
 	if (mmu_is_nested(vcpu))
 		init_kvm_nested_mmu(vcpu, cpu_role);

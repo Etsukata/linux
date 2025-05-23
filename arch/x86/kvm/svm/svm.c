@@ -5362,6 +5362,9 @@ static __init void svm_set_cpu_caps(void)
 		if (vgif)
 			kvm_cpu_cap_set(X86_FEATURE_VGIF);
 
+		if (boot_cpu_has(X86_FEATURE_GMET))
+			kvm_cpu_cap_set(X86_FEATURE_GMET);
+
 		if (vnmi)
 			kvm_cpu_cap_set(X86_FEATURE_VNMI);
 
@@ -5534,6 +5537,9 @@ static __init int svm_hardware_setup(void)
 		else
 			pr_info("Virtual GIF supported\n");
 	}
+
+	if (boot_cpu_has(X86_FEATURE_GMET))
+		pr_info("GMET supported\n");
 
 	vnmi = vgif && vnmi && boot_cpu_has(X86_FEATURE_VNMI);
 	if (vnmi)

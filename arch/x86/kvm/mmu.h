@@ -84,7 +84,8 @@ void kvm_mmu_set_ept_masks(bool has_ad_bits, bool has_exec_only);
 
 void kvm_init_mmu(struct kvm_vcpu *vcpu);
 void kvm_init_shadow_npt_mmu(struct kvm_vcpu *vcpu, unsigned long cr0,
-			     unsigned long cr4, u64 efer, gpa_t nested_cr3);
+			     unsigned long cr4, u64 efer, gpa_t nested_cr3,
+			     u64 nested_ctl);
 void kvm_init_shadow_ept_mmu(struct kvm_vcpu *vcpu, bool execonly,
 			     int huge_page_level, bool accessed_dirty,
 			     gpa_t new_eptp);
@@ -173,6 +174,11 @@ static inline void kvm_mmu_refresh_passthrough_bits(struct kvm_vcpu *vcpu,
 	__kvm_mmu_refresh_passthrough_bits(vcpu, mmu);
 }
 
+static inline bool is_gmet(struct kvm_mmu *mmu)
+{
+        return !!(mmu->cpu_role.ext.gmet);
+}
+
 /*
  * Check if a given access (described through the I/D, W/R and U/S bits of a
  * page fault error code pfec) causes a permission fault with the given PTE
@@ -203,7 +209,15 @@ static inline u8 permission_fault(struct kvm_vcpu *vcpu, struct kvm_mmu *mmu,
 	 */
 	u64 implicit_access = access & PFERR_IMPLICIT_ACCESS;
 	bool not_smap = ((rflags & X86_EFLAGS_AC) | implicit_access) == X86_EFLAGS_AC;
-	int index = (pfec | (not_smap ? PFERR_RSVD_MASK : 0)) >> 1;
+	bool gmet = is_gmet(mmu);
+	int index = pfec;
+	if (not_smap)
+		index |= PFERR_RSVD_MASK;
+	/* XXX: Bogus code but it somehow lets Windows11 boot */
+	if (gmet)
+		index &= ~PFERR_USER_MASK;
+	index >>= 1;
+
 	u32 errcode = PFERR_PRESENT_MASK;
 	bool fault;
 
