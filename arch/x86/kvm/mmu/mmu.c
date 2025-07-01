@@ -5415,11 +5415,12 @@ static void update_permission_bitmask(struct kvm_mmu *mmu, bool ept)
 				wf = (pfec & PFERR_USER_MASK) ? wf : 0;
 
 			/* Disallow supervisor fetches of user code if cr4.smep */
-			if (cr4_smep)
+			if (cr4_smep || gmet)
 				smepf = (pfec & PFERR_FETCH_MASK) ? kf : 0;
 
+			/* If !nx, GMET allows guest user-mode code fetches of kernel pages */
 			if (gmet)
-				gmetf = (pfec & PFERR_FETCH_MASK) ? kf : 0;
+				uf = 0;
 
 			/*
 			 * SMAP:kernel-mode data accesses from user-mode

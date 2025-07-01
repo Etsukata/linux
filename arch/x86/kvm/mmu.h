@@ -210,11 +210,18 @@ static inline u8 permission_fault(struct kvm_vcpu *vcpu, struct kvm_mmu *mmu,
 	u64 implicit_access = access & PFERR_IMPLICIT_ACCESS;
 	bool not_smap = ((rflags & X86_EFLAGS_AC) | implicit_access) == X86_EFLAGS_AC;
 	bool gmet = is_gmet(mmu);
+	bool in_user = kvm_x86_call(get_cpl)(vcpu) == 3;
 	int index = pfec;
 	if (not_smap)
 		index |= PFERR_RSVD_MASK;
-	/* XXX: Bogus code but it somehow lets Windows11 boot */
-	if (gmet)
+	/*
+	 * APM "Guest Mode Execute Trap Extension" says:
+	 *
+	 *   The guest user/supervisor indication is normally provided in
+	 *   ExitInfo1, however on some implementations a GMET erratum may
+	 *   require CPL to be read from the guest VMCB.
+	 */
+	if (gmet && !in_user)
 		index &= ~PFERR_USER_MASK;
 	index >>= 1;
 
