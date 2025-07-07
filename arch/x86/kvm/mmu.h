@@ -220,6 +220,9 @@ static inline u8 permission_fault(struct kvm_vcpu *vcpu, struct kvm_mmu *mmu,
 	 *   The guest user/supervisor indication is normally provided in
 	 *   ExitInfo1, however on some implementations a GMET erratum may
 	 *   require CPL to be read from the guest VMCB.
+	 *
+	 * Note: Only required for Zen 3 or older. Zen 4 or newer is not
+	 * affected by that erratum.
 	 */
 	if (gmet && !in_user)
 		index &= ~PFERR_USER_MASK;
